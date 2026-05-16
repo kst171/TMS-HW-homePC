@@ -1,0 +1,4 @@
+{"name": "Александр", "email": "alex@example.com"}
+{"name": "Мария", "email": "maria@example.com"}
+{"name": "Ольга", "email": "olga@example.com"}
+{"name": "Дмитрий", "email": "dmitry@example.com"}
