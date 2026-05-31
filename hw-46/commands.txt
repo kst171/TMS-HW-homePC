@@ -1,0 +1,80 @@
+Работа с сетью:
+# 1. Запустить файлы конфигурации для всех трех типов сервисов (ClusterIP, NodePort, LoadBalancer)
+kubectl apply -f services.yaml
+
+# 2. Посмотреть список всех созданных сервисов и их адреса в пространстве dev
+kubectl get svc -n dev
+
+# 3. Тест ClusterIP: Проверить изнутри тестового пода, отвечает ли веб-сайт по внутреннему имени
+kubectl exec -it rbac-test-pod -n dev -- wget -qO- http://web-clusterip
+
+# 4. Тест NodePort: Автоматически открыть веб-сайт в браузере через специальный туннель Minikube
+minikube service web-nodeport -n dev
+
+# 5. Тест LoadBalancer: Включить поддержку внешних IP-адресов (команду нужно запустить в ОТДЕЛЬНОМ окне консоли и не закрывать)
+minikube tunnel
+
+
+Работа с хранилищами:
+# 1. Создать виртуальный жесткий диск (Persistent Volume) на 5 Гигабайт
+kubectl apply -f local-pv.yaml
+
+# 2. Создать запрос (Claim) на выделение 2 Гигабайт из этого диска для нашей базы данных
+kubectl apply -f db-pvc.yaml
+
+# 3. Проверить, что диск и запрос нашли друг друга и связались (статус должен измениться на Bound)
+kubectl get pv local-pv
+kubectl get pvc redis-pvc -n dev
+
+# 4. Обновить настройки базы данных (StatefulSet), чтобы она подключила этот созданный диск
+kubectl apply -f db-statefulset.yaml
+
+# 5. Подождать пару секунд и убедиться, что под базы данных успешно перезапустился и работает
+kubectl get pods -n dev
+
+
+Тест сохранения данных:
+# 1. Зайти внутрь базы данных Redis и записать туда тестовое слово "Hello-DevOps"
+kubectl exec -it db-app-0 -n dev -- redis-cli set testkey Hello-DevOps
+
+# 2. Имитировать поломку: принудительно удалить под базы данных
+kubectl delete pod db-app-0 -n dev --grace-period=0 --force
+
+# 3. Подождать 10-15 секунд, пока Kubernetes автоматически поднимет новую копию базы взамен удаленной, и проверить статус
+kubectl get pods -n dev
+
+# 4. Проверить, остались ли данные на диске: прочитать наше секретное слово из нового контейнера
+kubectl exec -it db-app-0 -n dev -- redis-cli get testkey
+
+
+Динамические хранилища:
+# 1. Создать запрос на динамический диск (PVC), использующий стандартный облачный класс minikube (standard)
+kubectl apply -f task-pvc.yaml
+
+# 2. Запустить тестовый под, который смонтирует этот динамический диск внутрь себя
+kubectl apply -f storage-test-pod.yaml
+
+# 3. Убедиться, что под успешно скачался и перешел в статус Running
+kubectl get pod storage-test-pod -n dev
+
+# 4. ЗАПИСЬ: Создать текстовый файл внутри папки на диске этого пода
+kubectl exec -it storage-test-pod -n dev -- sh -c "echo 'Kuber-Storage-OK' > /usr/share/nginx/html/test.txt"
+
+# 5. ЧТЕНИЕ: Прочитать созданный файл из диска пода и убедиться в успешности операции
+kubectl exec -it storage-test-pod -n dev -- cat /usr/share/nginx/html/test.txt
+
+# 6. ВАЛИДАЦИЯ ДИНАМИЧЕСКОГО ВЫДЕЛЕНИЯ: Проверить список дисков и убедиться, что Kubernetes сам автоматически создал PV с длинным именем
+kubectl get pv
+
+
+Проверка безопасности:
+# 1. Проверить, может ли этот аккаунт смотреть список подов (Должно ответить: yes)
+kubectl auth can-i get pods --as=system:serviceaccount:dev:app-service-account -n dev
+
+# 2. Проверить, может ли этот аккаунт удалять поды (Должно ответить: no)
+kubectl auth can-i delete pods --as=system:serviceaccount:dev:app-service-account -n dev
+
+# 3. Проверить, может ли этот аккаунт смотреть другие настройки, например ConfigMaps (Должно ответить: no)
+kubectl auth can-i get configmaps --as=system:serviceaccount:dev:app-service-account -n dev
+
+
